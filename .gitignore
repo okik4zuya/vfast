@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtualenvs
+venv/
+venv-gui/
+.venv/
+
+# PyInstaller / NSIS build output
+build/
+dist/
+*.spec.bak
+*-setup.exe
+
+# Large third-party binaries (ffmpeg/ffplay/ffprobe/mpv, ~670MB total) — too big for git,
+# fetch these yourself and drop them in bin/ before building
+bin/ffmpeg.exe
+bin/ffplay.exe
+bin/ffprobe.exe
+bin/mpv.exe
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.vscode/
+*.log
+
+# Claude Code local settings
+.claude/
+
+yt2s/
+yt2s_v0

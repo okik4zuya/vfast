@@ -1,0 +1,5 @@
+- jadikan "~\Videos" sebagai default path
+- tambah open folder di baris atas (folder path), sebelah kiri tombol "change"
+- pada play with mpv, tambah info time sampai milisecon di kiri atas, sy lupa option apa itu di mpv, sy pernah coba sebelumnya
+- screen record: no microphone selected, but it is plugged in, check this
+- how to handle multiple file video quality selection? different yt video sometime have different video quality list.
