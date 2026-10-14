@@ -1,0 +1,3 @@
+# Build-only tooling (not needed to run vfast, only to package it).
+# Install into venv-gui: venv-gui\Scripts\pip install -r gui\requirements-build.txt
+pyinstaller==6.11.1
