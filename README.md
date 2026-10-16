@@ -11,11 +11,16 @@ project folder, choose a tool from the sidebar, run. No command line needed.
 | Speed | Speed up or slow down a video |
 | Add / Remove / Extract Audio | Replace, strip or pull out the audio track |
 | Denoise | Reduce background noise (RNNoise) |
-| Trim | Keep a time range, with a live mpv preview |
+| Trim | Keep a time range, with a live mpv preview; single range and bulk clips |
 | Cut | Remove one or more segments, with a live mpv preview and timeline |
 | Overlay | Censor (box, blur, pixelate), add text or a logo, or mute, for a time range |
+| Effects | One-click looks and packs (YouTube, Shorts, TikTok, cinematic, fixes) with live mpv preview; combines effects, saved Overlay effects, speed and audio cleanup in a single render |
 | Screen Record | Capture the screen and microphone |
 | Download | Fetch videos with yt-dlp |
+
+Cut, Trim, Overlay and Effects remember their settings per video in a small file next to it
+(`clip.cut.json`, `clip.trim.json`, `clip.overlay.json`, `clip.effects.json`), so they survive switching
+panels or closing the app. Cut and Trim also have a **Spec ▾** menu to save or load a spec under any name.
 
 Everything runs locally. The network is only used by the Download panel.
 
@@ -61,7 +66,8 @@ read it.
 
 | Path | Holds |
 |---|---|
-| `gui/` | The app (customtkinter): `app.py`, `panels/`, `widgets/`, `core/` (ffmpeg/mpv logic) |
+| `gui/` | The app (customtkinter): `app.py`, `panels/`, `widgets/`, `core/` (ffmpeg/mpv logic), `tests/` |
+| `presets/` | Command-line front end for the Effects engine (`vfx.ps1` / `vfx.py`) |
 | `bin/` | ffmpeg, mpv and the denoise model (binaries are git-ignored) |
 | `assets/icon/` | App icon (SVG source, ICO, generator script) |
 | `modules/` | Small Python helpers for transcription |

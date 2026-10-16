@@ -18,6 +18,7 @@ STEPS = [
     ("trim", "Trim", "📏"),
     ("cut", "Cut", "✂"),
     ("overlay", "Overlay", "🔲"),
+    ("effects", "Effects", "✨"),
     ("screen_record", "Screen Record", "⏺"),
     ("download", "Download", "⬇"),
     ("about", "About", "ℹ"),
@@ -52,7 +53,7 @@ class Sidebar(ctk.CTkFrame):
                 anchor="w",
                 command=lambda n=name: self.app.show_panel(n),
             )
-            btn.grid(row=i, column=0, padx=8, pady=(8 if i == 0 else 4, 4))
+            btn.grid(row=i, column=0, padx=8, pady=(6 if i == 0 else 3, 3))  # tight: 13 buttons must fit minsize 520
             self.buttons[name] = btn
             self._labels[name] = (label, icon)
             Tooltip(btn, label, enabled=lambda: self.collapsed)

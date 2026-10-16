@@ -46,12 +46,15 @@ class RemoveAudioPanel(ctk.CTkFrame):
         project_dir = self.app.project.project_dir
         self.videos = list_videos(project_dir) if project_dir else []
         self.video_menu.configure(values=[v.name for v in self.videos] or ["(no videos found)"])
-        self.video_menu.set(self.videos[0].name if self.videos else "(no videos found)")
+        self.video_menu.set(self.app.preferred_video(self.videos))
         self._on_change()
 
     def _current_video(self):
         name = self.video_menu.get()
-        return next((v for v in self.videos if v.name == name), None)
+        media = next((v for v in self.videos if v.name == name), None)
+        if media:
+            self.app.selected_video = media.path  # survives switching panels
+        return media
 
     def _on_change(self):
         media = self._current_video()

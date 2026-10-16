@@ -5,31 +5,24 @@ metadata:
   type: project
   tier: T0
   created: 2026-09-11 10:48
-  updated: 2026-10-14 18:18
+  updated: 2026-10-16 08:04
 ---
 
 # vfast — Status
 
 ## Current state
 
-**Layout pass (2026-10-14, latest) — see [[ui-layout-pass]].** Collapsible icon sidebar (☰/Ctrl+B), log console collapsed by
-default with badge + auto-expand, transport row fixed under the preview, vertical-video preview height-capped.
-Screenshot-verified, not click-tested.
+**Effects panel built and headless-verified (2026-10-16) — see [[effects-panel]].** New sidebar tab "Effects":
+21 presets / 25 packs (YouTube x8, Shorts/TikTok/Reels, Instagram, WhatsApp, looks, quick fixes) rendered
+together with the saved Overlay effects, speed and audio cleanup in **one** ffmpeg pass, with live mpv preview
+and a per-video `<video>.effects.json` that survives panel switches and video changes without leaking
+(`core/effects.py`, `render.py`, `spec.py`, `panels/effects.py`; CLI in `presets/vfx.py`). 45 tests pass; the real
+app was driven headless incl. render, Test 10s and minsize 760x520.
+**Cut/Trim spec persistence (2026-10-16 07:47) — see [[cut-trim-spec]].** `<video>.cut.json` / `<video>.trim.json` restore the ranges after leaving a panel or switching video (no leak), with a "Spec ▾" menu (Save writes beside the video without a dialog; Load/Reset), the same menu now in Effects and Overlay; **Overlay also autosaves/restores per video** (`core/overlayspec.py`; file stays CLI/Effects compatible, may contain unfinished rows which Effects skips) and a banner for specs that no longer fit the video; shared engine `core/sidecar.py` (Effects moved onto it). 68 tests + real-app scripts pass; not click-tested.
 
-**Tab-switch speedup + loading overlay (2026-10-14) — see [[panel-loading]].** Cut/Trim/Overlay were
-slow because every tab click ran 2 serial uncached ffprobes per video on the Tk thread; now one cached,
-parallel probe warmed off-thread in `App._show_panel`, with a spinner overlay. Headless-verified, not click-tested.
-
-**Earlier today:** Trim rebuilt on the Cut layout with shared `widgets/video_pane.py` ([[trim-panel-redesign]]);
-Overlay panel + ⏺ capture + ghost ✕ delete confirm across Cut/Trim/Overlay ([[overlay-engine]],
-[[cut-panel-mpv-embed]]). All headless-verified, none click-tested by the user.
-
-**Icon + build (2026-10-14 18:18):** the blurry shortcut icon was an ICO containing only 16px (Pillow bug) — fixed in
-`make_icon.py`, exe + `vfast-setup.exe` rebuilt with all of today's changes ([[app-icon]], [[packaging]]).
-**Open:** older Cut items unconfirmed; new icon/installer not yet checked in a real install.
-
-Earlier state (GUI rewrite, Cut mpv embed sessions 1-11, icon, NSIS packaging) is archived below and in
-[[gui-rewrite]], [[cut-panel-mpv-embed]], [[app-icon]], [[packaging]].
+**Also (2026-10-16 07:19):** the selected video is now remembered across panels (`App.selected_video`, [[ui-layout-pass]]).
+**Open:** no real mouse click-test or look tuning on real footage; exe/installer not rebuilt; nothing committed.
+Older open items (Cut/Trim/Overlay click-tests, new icon in a real install) are in [[todo-list]].
 
 ## Archive
 
@@ -51,3 +44,7 @@ Earlier state (GUI rewrite, Cut mpv embed sessions 1-11, icon, NSIS packaging) i
   build; NSIS installer built; frozen-exe `panels` import fix (`sys.path.insert` before
   `collect_submodules`). Detail in [[cut-panel-mpv-embed]] and [[packaging]].
 - 2026-10-14: Overlay engine prototype (`core/overlay.py`) + `vfast-overlay` skill; see [[overlay-engine]].
+- 2026-10-14: Layout pass (collapsible sidebar, collapsed log console, fixed transport, capped preview) -
+  [[ui-layout-pass]]; tab-switch speedup + loading overlay - [[panel-loading]]; Trim rebuilt on the Cut layout -
+  [[trim-panel-redesign]]; Overlay panel - [[overlay-engine]]; blurry shortcut icon fixed (ICO had only 16px) and
+  exe + `vfast-setup.exe` rebuilt - [[app-icon]], [[packaging]]. All headless/screenshot-verified, not click-tested.

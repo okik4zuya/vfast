@@ -5,7 +5,7 @@ metadata:
   type: project
   tier: T1
   created: 2026-10-14 18:10
-  updated: 2026-10-14 18:10
+  updated: 2026-10-16 07:19
 ---
 
 # Layout pass: console, transport, sidebar (headless-verified + real screenshots, not click-tested)
@@ -43,3 +43,4 @@ restart, badge/preview text, auto-expand on error/result and no false positive o
 
 ## Change log
 - 2026-10-14 18:10: Created; implemented console/transport/preview-cap/sidebar after the proposal discussion.
+- 2026-10-16 07:19: Selected video now survives panel switches: `App.selected_video` + `App.preferred_video(videos)`; every panel with a video dropdown (Speed, Add/Remove/Extract Audio, Denoise, Trim, Cut, Overlay, Effects) restores it in `_refresh_files` and records it in `_current_video`. Falls back to the first video if it is gone; `set_project_dir` clears it. Merge (multi-select) is unchanged. Verified by driving the real app across all 9 panels.

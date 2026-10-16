@@ -83,6 +83,29 @@ def has_audio_stream(path: str) -> bool:
         return False
 
 
+def video_fps(path: str) -> str:
+    """First video stream frame rate as an ffmpeg rational string ("30000/1001"); "30" if unknown."""
+    try:
+        out = subprocess.check_output(
+            [
+                ffprobe_path(), "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=r_frame_rate",
+                "-of", "csv=p=0",
+                path,
+            ],
+            creationflags=_CREATE_NO_WINDOW,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        num, _, den = out.partition("/")
+        if float(num) > 0 and float(den or 1) > 0:
+            return out
+    except (subprocess.CalledProcessError, OSError, ValueError):
+        pass
+    return "30"
+
+
 def _list(folder: str, patterns, progress: Optional[Callable[[int, int], None]] = None) -> list[MediaFile]:
     paths = [p for pattern in patterns for p in glob.glob(os.path.join(folder, pattern))]
     done = 0

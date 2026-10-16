@@ -63,7 +63,7 @@ class SpeedPanel(ctk.CTkFrame):
         self.videos = list_videos(project_dir) if project_dir else []
         if self.videos:
             self.video_menu.configure(values=[v.name for v in self.videos])
-            self.video_menu.set(self.videos[0].name)
+            self.video_menu.set(self.app.preferred_video(self.videos))
         else:
             self.video_menu.configure(values=["(no videos found)"])
             self.video_menu.set("(no videos found)")
@@ -73,6 +73,7 @@ class SpeedPanel(ctk.CTkFrame):
         name = self.video_menu.get()
         for v in self.videos:
             if v.name == name:
+                self.app.selected_video = v.path  # survives switching panels
                 return v
         return None
 

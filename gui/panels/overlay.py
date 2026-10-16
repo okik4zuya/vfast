@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 import threading
@@ -9,10 +8,13 @@ from typing import TYPE_CHECKING
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
+from core import overlayspec, settings
+from core import spec as specmod
 from core.media import list_videos, format_duration
 from core.cut import parse_time
 from core.overlay import EFFECT_TYPES, overlay_media, preview_frame
 from widgets.delete_control import confirm_delete, make_delete_button
+from widgets.spec_bar import SpecBanner, ask_load_path, new_session, spec_menu
 from widgets.video_pane import VideoPane
 
 if TYPE_CHECKING:
@@ -39,7 +41,6 @@ _NUMERIC = {"x", "y", "w", "h", "strength", "block", "size"}
 _OPTIONAL = {"bg", "color"}  # may stay empty (engine default); image w/h are optional too
 _GEOMETRY_TYPES = ("box", "blur", "pixelate")
 _ADD_LABEL = "+ Add effect"
-_SPEC_LABEL = "Spec ▾"
 _BAD = "#dc2626"
 
 
@@ -325,6 +326,7 @@ class OverlayPanel(ctk.CTkFrame):
         self._frame_t = 0.0
         self._frame_scale = 1.0
         self._drag_start: tuple[int, int] | None = None
+        self.session = new_session(self, overlayspec.OverlaySession)
         self._build()
         self._refresh_files()
 
@@ -347,18 +349,25 @@ class OverlayPanel(ctk.CTkFrame):
         right.grid_columnconfigure(0, weight=1)
         paned.add(right._parent_frame, minsize=260, width=340, stretch="always")
 
-        ctk.CTkLabel(right, text="Overlay", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, sticky="w", pady=(0, 8))
+        head_row = ctk.CTkFrame(right, fg_color="transparent")
+        head_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ctk.CTkLabel(head_row, text="Overlay", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
+        self.spec_menu = spec_menu(head_row, self._save_spec, self._load_spec, self._reset_spec)
+        self.spec_menu.pack(side="right")
+
+        self.banner = SpecBanner(right, on_keep=self._keep_spec)
+        self.banner.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        self.banner.grid_remove()
 
         self.canvas = tk.Canvas(right, height=150, bg="#202020", highlightthickness=0, cursor="crosshair")
-        self.canvas.grid(row=1, column=0, sticky="ew")
+        self.canvas.grid(row=2, column=0, sticky="ew")
         self.canvas.bind("<Configure>", lambda e: self._render_canvas())
         self.canvas.bind("<ButtonPress-1>", self._drag_begin)
         self.canvas.bind("<B1-Motion>", self._drag_move)
         self.canvas.bind("<ButtonRelease-1>", self._drag_end)
 
         fbar = ctk.CTkFrame(right, fg_color="transparent")
-        fbar.grid(row=2, column=0, sticky="ew", pady=(4, 8))
+        fbar.grid(row=3, column=0, sticky="ew", pady=(4, 8))
         ctk.CTkButton(fbar, text="Grab frame", width=90, command=lambda: self._show_frame(False)).pack(
             side="left", padx=(0, 6))
         ctk.CTkButton(fbar, text="Preview effects", width=110, command=lambda: self._show_frame(True)).pack(
@@ -367,7 +376,7 @@ class OverlayPanel(ctk.CTkFrame):
         self.coord_label.pack(side="left")
 
         head = ctk.CTkFrame(right, fg_color="transparent")
-        head.grid(row=3, column=0, sticky="ew")
+        head.grid(row=4, column=0, sticky="ew")
         self.effects_label = ctk.CTkLabel(head, text="Effects (0)", font=ctk.CTkFont(weight="bold"))
         self.effects_label.pack(side="left")
         self.add_menu = ctk.CTkOptionMenu(head, values=list(EFFECT_TYPES), width=120,
@@ -376,30 +385,28 @@ class OverlayPanel(ctk.CTkFrame):
         self.add_menu.pack(side="right")
 
         self.rows_frame = ctk.CTkFrame(right, fg_color="transparent")
-        self.rows_frame.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        self.rows_frame.grid(row=5, column=0, sticky="ew", pady=(4, 0))
         self.rows_frame.grid_columnconfigure(0, weight=1)
 
         speed = ctk.CTkFrame(right, fg_color="transparent")
-        speed.grid(row=5, column=0, pady=(10, 0), sticky="w")
+        speed.grid(row=6, column=0, pady=(10, 0), sticky="w")
         ctk.CTkLabel(speed, text="Quality:").pack(side="left", padx=(0, 10))
-        self.speed_var = ctk.StringVar(value="balanced")
+        saved = settings.get("overlay_quality", "balanced")
+        self.speed_var = ctk.StringVar(value=saved if saved in _SPEED_TIERS else "balanced")
+        self.speed_var.trace_add("write", lambda *_: settings.set("overlay_quality", self.speed_var.get()))
         for label, val in (("Fast", "fast"), ("Balanced", "balanced"), ("High", "high")):
             ctk.CTkRadioButton(speed, text=label, variable=self.speed_var, value=val, width=20).pack(
                 side="left", padx=(0, 10))
 
         out = ctk.CTkFrame(right, fg_color="transparent")
-        out.grid(row=6, column=0, pady=(8, 4), sticky="ew")
+        out.grid(row=7, column=0, pady=(8, 4), sticky="ew")
         out.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(out, text="Output:").grid(row=0, column=0, sticky="w")
         self.output_entry = ctk.CTkEntry(out)
         self.output_entry.grid(row=0, column=1, padx=8, sticky="ew")
 
         runs = ctk.CTkFrame(right, fg_color="transparent")
-        runs.grid(row=7, column=0, pady=(8, 4), sticky="ew")
-        self.spec_menu = ctk.CTkOptionMenu(runs, values=["Save spec", "Load spec"], width=90,
-                                           command=self._spec_action)
-        self.spec_menu.set(_SPEC_LABEL)
-        self.spec_menu.pack(side="left")
+        runs.grid(row=8, column=0, pady=(8, 4), sticky="ew")
         ctk.CTkButton(runs, text="Run Overlay", width=96, command=self._run_full).pack(side="right")
         ctk.CTkButton(runs, text="Test 10s", width=80, command=self._run_test).pack(side="right", padx=(0, 6))
 
@@ -408,21 +415,29 @@ class OverlayPanel(ctk.CTkFrame):
         project_dir = self.app.project.project_dir
         self.videos = list_videos(project_dir) if project_dir else []
         self.video_menu.configure(values=[v.name for v in self.videos] or ["(no videos found)"])
-        self.video_menu.set(self.videos[0].name if self.videos else "(no videos found)")
+        self.video_menu.set(self.app.preferred_video(self.videos))
         self._on_video_change()
 
     def _current_video(self):
         name = self.video_menu.get()
-        return next((v for v in self.videos if v.name == name), None)
-
-    def _spec_path(self, media) -> str:
-        return os.path.splitext(media.path)[0] + ".overlay.json"
+        media = next((v for v in self.videos if v.name == name), None)
+        if media:
+            self.app.selected_video = media.path  # survives switching panels
+        return media
 
     def _on_video_change(self):
+        self._persist()  # whatever is on screen belongs to the video being left
         media = self._current_video()
+        self.session.switch_video(media.path if media else None)
         self._frame_img = None
-        self._clear_rows()
+        with self.session.applying():
+            self._sync_widgets()
         self._render_canvas()
+        if media:
+            fp = specmod.fingerprint(media.path, media.duration, media.width, media.height)
+            if fp:
+                self.session.apply_probe(self.session.generation, fp)
+        self._show_issues()
         self.output_entry.delete(0, "end")
         if media:
             base, ext = os.path.splitext(media.name)
@@ -432,9 +447,6 @@ class OverlayPanel(ctk.CTkFrame):
                 self.mpv_embed.load(media.path)
             except OSError as e:
                 self.app.log(f"[Overlay] Failed to start mpv preview: {e}")
-            sp = self._spec_path(media)
-            if os.path.isfile(sp):
-                self._load_spec(sp)
         else:
             self.mpv_embed.stop()
 
@@ -447,6 +459,7 @@ class OverlayPanel(ctk.CTkFrame):
         self.rows.append(row)
         self._renumber()
         self.select_row(row)
+        self._persist()
         return row
 
     def duplicate_row(self, row: EffectRow):
@@ -478,6 +491,7 @@ class OverlayPanel(ctk.CTkFrame):
         if self.rows and self.selected is None:
             self.select_row(self.rows[0])
         self._draw_boxes()
+        self._persist()
 
     def _renumber(self):
         for i, r in enumerate(self.rows):
@@ -493,6 +507,7 @@ class OverlayPanel(ctk.CTkFrame):
 
     def boxes_changed(self):
         self._draw_boxes()
+        self._persist()
 
     def set_time(self, row: EffectRow, is_start: bool):
         self.select_row(row)
@@ -522,48 +537,89 @@ class OverlayPanel(ctk.CTkFrame):
                 return None
         return out
 
-    def _spec_action(self, choice: str):
-        self.spec_menu.set(_SPEC_LABEL)
-        if choice == "Save spec":
-            self._save_spec()
-        else:
-            self._load_spec_dialog()
+    # ---- spec (<video>.overlay.json) ----
+    @staticmethod
+    def _row_spec(row: "EffectRow") -> dict:
+        """One row as saved: exactly what is on screen (half-finished rows included), no validation."""
+        return overlayspec.clean_effect(row.raw())
 
-    def _save_spec(self, path: str | None = None):
-        media = self._current_video()
-        if not media:
+    def _sync_widgets(self):
+        """spec -> widgets. Call inside `session.applying()` so nothing writes back."""
+        self._clear_rows()
+        for fx in self.session.spec["effects"]:
+            self.add_row(fx)
+
+    def _persist(self):
+        """widgets -> spec."""
+        if self.session.video is None:
             return
-        effects = self.collect_effects()
-        if effects is None:
-            return
-        path = path or self._spec_path(media)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"effects": effects}, f, indent=2, ensure_ascii=False)
-        self.app.log(f"[Overlay] Spec saved: {os.path.basename(path)}")
-
-    def _load_spec_dialog(self):
-        media = self._current_video()
-        path = filedialog.askopenfilename(
-            title="Load overlay spec", filetypes=[("Overlay spec", "*.json")],
-            initialdir=os.path.dirname(media.path) if media else None)
-        if path:
-            self._load_spec(path)
-
-    def _load_spec(self, path: str):
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            effects = data["effects"] if isinstance(data, dict) else data
-            for fx in effects:
-                if fx.get("type") not in EFFECT_TYPES:
-                    raise ValueError(f"unknown effect type {fx.get('type')!r}")
-            self._clear_rows()
-            for fx in effects:
-                self.add_row(fx)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            self.app.log(f"[Overlay] Could not load spec {os.path.basename(path)}: {e}")
+            effects = [self._row_spec(r) for r in self.rows]
+        except tk.TclError:
+            return  # widgets already gone
+        self.session.update(effects=effects)
+        self.session.revalidate()
+        self._show_issues()
+
+    def _show_issues(self):
+        s = self.session
+        msgs = list(s.warnings) + [i.message for i in s.issues] + ([s.save_error] if s.save_error else [])
+        self.banner.show(msgs, can_keep=any(i.kind in ("file_changed", "resolution_changed") for i in s.issues))
+
+    def _keep_spec(self):
+        self.session.accept_source()
+        self._show_issues()
+
+    def _reset_spec(self):
+        if not self.session.video:
             return
-        self.app.log(f"[Overlay] Loaded {len(self.rows)} effect(s) from {os.path.basename(path)}")
+        if self.rows and not confirm_delete("Reset spec", f"Remove all {len(self.rows)} effect(s) of this video?",
+                                            parent=self.winfo_toplevel()):
+            return
+        self.session.reset()
+        with self.session.applying():
+            self._sync_widgets()
+        self._draw_boxes()
+        self._show_issues()
+
+    def _save_spec(self):
+        """Write now, next to the video, named after it (same file the autosave keeps up to date)."""
+        if not self.session.video:
+            self.app.log("[Overlay] No video selected.")
+            return
+        self._persist()
+        path = self.session.default_export_path()
+        try:
+            self.session.export_to(path)
+            self.app.log(f"[Overlay] Spec saved: {path}")
+        except OSError as e:
+            self.app.log(f"[Overlay] Could not save spec: {e}")
+
+    def _load_spec(self):
+        if not self.session.video:
+            self.app.log("[Overlay] No video selected.")
+            return
+        path = ask_load_path(self.session.video, "Overlay")
+        if not path:
+            return
+        ok, warns = self.session.import_from(path)
+        for w in warns:
+            self.app.log(f"[Overlay] {os.path.basename(path)}: {w}")
+        if ok:
+            with self.session.applying():
+                self._sync_widgets()
+            self._draw_boxes()
+            self.app.log(f"[Overlay] Loaded {len(self.rows)} effect(s) from {os.path.basename(path)}")
+        self._show_issues()
+
+    def destroy(self):
+        # Navigation destroys the panel: persist what is on screen (an entry may not have lost focus yet).
+        try:
+            self._persist()
+            self.session.flush()
+        except Exception:
+            pass
+        super().destroy()
 
     # ---- frame canvas ----
     def _show_frame(self, with_effects: bool):
@@ -675,6 +731,7 @@ class OverlayPanel(ctk.CTkFrame):
             row.set_geometry(x=x, y=y, w=w, h=h)
         self.coord_label.configure(text=f"x{x} y{y} {w}×{h}")
         self._draw_boxes()
+        self._persist()
 
     # ---- run ----
     def _start(self, test: bool):
@@ -701,7 +758,8 @@ class OverlayPanel(ctk.CTkFrame):
         preset, crf = _SPEED_TIERS[self.speed_var.get()]
 
         def begin(window):
-            self._save_spec()
+            self._persist()
+            self.session.flush()   # the file on disk is exactly what gets rendered
             self._running = True
 
             def worker():

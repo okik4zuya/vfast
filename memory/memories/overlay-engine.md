@@ -5,7 +5,7 @@ metadata:
   type: project
   tier: T1
   created: 2026-10-14 14:40
-  updated: 2026-10-14 15:57
+  updated: 2026-10-16 08:04
 ---
 
 # Overlay engine + plan for the Overlay panel
@@ -116,4 +116,6 @@ Design decisions already reasoned out:
 - 2026-10-14 14:46: Step 2 (panel) built and headless-verified; recorded.
 - 2026-10-14 15:05: Panel re-laid out (canvas on top, accordion rows, ⏺ buttons, duplicate, inline validation).
 - 2026-10-14 15:30: Effect-row ✕ is now the shared ghost delete + confirm (`widgets/delete_control.py`); ⧉ separated from it; field flow uses place() wrapping.
+- 2026-10-16 07:00: Effects panel ([[effects-panel]]) reads `<video>.overlay.json` and runs `build_filter` inside its single render; overlay coords are absolute px, so Overlay must be applied before any layout change.
 - 2026-10-14 15:57: Left pane now `widgets/video_pane.py` (shared with Cut/Trim); behaviour unchanged, regression test passed.
+- 2026-10-16 08:04: Panel now autosaves/restores via core/overlayspec.py (see [[cut-trim-spec]]); the on-disk file gained `version`/`source` keys and may hold unfinished rows. Engine unchanged except new pure `effect_problem()`.

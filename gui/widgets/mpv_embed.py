@@ -140,8 +140,15 @@ class MpvEmbed(ctk.CTkFrame):
     def _on_configure(self, event):
         self._refit(event.width)
 
-    def load(self, path: str, start: Optional[str] = None):
-        """Tear down any running mpv and relaunch it embedded, on `path`."""
+    @staticmethod
+    def _lavfi_option(graph: str) -> str:
+        # "%N%" = the next N bytes are literal, so commas/colons/quotes in a filtergraph need no escaping.
+        return f"lavfi=graph=%{len(graph.encode('utf-8'))}%{graph}"
+
+    def load(self, path: str, start: Optional[str] = None, vf: str = "", af: str = ""):
+        """Tear down any running mpv and relaunch it embedded, on `path`. `vf`/`af` are libavfilter
+        graphs applied from the first frame (so a freshly loaded video never flashes the previous
+        video's effects)."""
         self.stop()
         self.update_idletasks()  # force geometry so winfo_id()/size are accurate
         self.pipe_name = rf"\\.\pipe\vfast-mpv-{os.getpid()}-{id(self)}-{int(time.time()*1000)}"
@@ -181,6 +188,10 @@ class MpvEmbed(ctk.CTkFrame):
         ]
         if start:
             cmd.append(f"--start={start}")
+        if vf:
+            cmd.append("--vf=" + self._lavfi_option(vf))
+        if af:
+            cmd.append("--af=" + self._lavfi_option(af))
         self.proc = subprocess.Popen(
             cmd, creationflags=_CREATE_NO_WINDOW,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -212,6 +223,17 @@ class MpvEmbed(ctk.CTkFrame):
             return
         pipe_name = self.pipe_name
         threading.Thread(target=send_command, args=(pipe_name, command), daemon=True).start()
+
+    def set_filters(self, vf: str = "", af: str = ""):
+        """Swap the live video/audio filter graphs on the running mpv (no restart, position kept).
+        "" clears. Note mpv answers 'success' even for a graph it later rejects, so graphs must be
+        known-good (core.effects presets are checked by tests/test_effects_render.py and a mpv run)."""
+        for prop, graph in (("vf", vf), ("af", af)):
+            value = [{"name": "lavfi", "params": {"graph": graph}}] if graph else []
+            self.send_command_async(["set_property", prop, value])
+
+    def set_speed(self, speed: float):
+        self.send_command_async(["set_property", "speed", float(speed)])
 
     def toggle_pause(self):
         self.send_command_async(["cycle", "pause"])

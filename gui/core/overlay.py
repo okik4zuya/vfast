@@ -22,6 +22,38 @@ DEFAULT_FONT = "C:/Windows/Fonts/arial.ttf"
 EFFECT_TYPES = ("box", "blur", "pixelate", "text", "image", "mute")
 
 
+_REQUIRED = {"box": ("x", "y", "w", "h"), "blur": ("x", "y", "w", "h"), "pixelate": ("x", "y", "w", "h"),
+             "text": ("text", "x", "y"), "image": ("path", "x", "y"), "mute": ()}
+_INT_KEYS = ("x", "y", "w", "h")
+
+
+def effect_problem(fx: dict) -> str | None:
+    """Why this effect dict cannot be rendered (missing/invalid field), or None when it is complete.
+    Pure and forgiving about types: numbers may arrive as strings from the panel's entry fields."""
+    kind = fx.get("type")
+    if kind not in EFFECT_TYPES:
+        return f"tipe tidak dikenal ({kind!r})"
+    for key in _REQUIRED[kind]:
+        v = fx.get(key)
+        if v is None or str(v).strip() == "":
+            return f"'{key}' belum diisi"
+        if key in _INT_KEYS:
+            try:
+                int(float(v))
+            except (TypeError, ValueError):
+                return f"'{key}' harus angka"
+    for key in ("start", "end"):
+        v = fx.get(key)
+        if v not in (None, ""):
+            try:
+                _t(v, 0.0)
+            except (TypeError, ValueError):
+                return f"waktu '{key}' tidak valid"
+    if kind == "mute" and fx.get("start") in (None, "") and fx.get("end") in (None, ""):
+        return "mute butuh start dan/atau end"
+    return None
+
+
 def _esc_path(p: str) -> str:
     """Path -> ffmpeg filter-option value (forward slashes, escaped drive colon, quoted)."""
     return "'" + p.replace("\\", "/").replace(":", "\\:") + "'"

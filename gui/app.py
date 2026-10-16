@@ -21,7 +21,7 @@ class ProjectState:
 
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-_HEAVY_PANELS = ("cut", "trim", "overlay")  # embedded mpv: slow to build
+_HEAVY_PANELS = ("cut", "trim", "overlay", "effects")  # embedded mpv: slow to build
 
 _PANEL_CLASSES = {
     "merge": ("panels.merge", "MergePanel"),
@@ -33,6 +33,7 @@ _PANEL_CLASSES = {
     "trim": ("panels.trim", "TrimPanel"),
     "cut": ("panels.cut", "CutPanel"),
     "overlay": ("panels.overlay", "OverlayPanel"),
+    "effects": ("panels.effects", "EffectsPanel"),
     "screen_record": ("panels.screen_record", "ScreenRecordPanel"),
     "download": ("panels.download", "DownloadPanel"),
     "about": ("panels.about", "AboutPanel"),
@@ -52,6 +53,7 @@ class App(ctk.CTk):
 
         self.project = ProjectState()
         self.log_queue: queue.Queue[str] = queue.Queue()
+        self.selected_video = ""  # path of the video last picked in any panel; kept across panel switches
         self._nav_token = 0  # bumped per navigation so a slow, superseded panel load is discarded
         self._scan_progress = (0, 0)
         self._spin_job = None
@@ -155,8 +157,17 @@ class App(ctk.CTk):
             return True
         return False
 
+    def preferred_video(self, videos) -> str:
+        """Dropdown value for a freshly built panel: the video picked last, else the first one."""
+        if not videos:
+            return "(no videos found)"
+        want = os.path.normcase(os.path.abspath(self.selected_video)) if self.selected_video else ""
+        match = next((v for v in videos if os.path.normcase(os.path.abspath(v.path)) == want), None)
+        return (match or videos[0]).name
+
     def set_project_dir(self, path: str):
         self.project.project_dir = path
+        self.selected_video = ""  # a new folder starts with no remembered video
         self.project_label.configure(text=path)
         self.refresh_state()
 

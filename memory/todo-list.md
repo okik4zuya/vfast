@@ -5,7 +5,7 @@ metadata:
   type: project
   tier: T0
   created: 2026-09-11 10:48
-  updated: 2026-10-14 18:18
+  updated: 2026-10-16 08:04
 ---
 
 # vfast — To-Do
@@ -74,3 +74,10 @@ metadata:
 - [ ] gui/: click-test the new sidebar (☰, Ctrl+B, icon tooltips), console auto-expand and vertical-video preview; fix the clipped "High Quality" radio in the Cut right pane — see [[ui-layout-pass]]
 - [x] Fix blurry desktop-shortcut icon (ICO had only 16px) and rebuild exe + installer — see [[app-icon]]
 - [ ] Verify the new icon in a real install (re-run `vfast-setup.exe`, re-create the desktop shortcut); installer also bundles the loading overlay + layout pass, not click-tested
+- [x] gui/: Effects panel (21 presets, 25 packs, one-render pipeline with Overlay + speed + audio, per-video spec, live mpv preview, `presets/vfx.py` CLI, 45 tests) - see [[effects-panel]]
+- [ ] gui/: click-test the Effects panel for real (checkbox/pack clicks, live preview in mpv, Test 10s, Render, switching videos, leaving and returning) and tune preset strengths on real footage - UNCONFIRMED, see [[effects-panel]]
+- [ ] Rebuild exe + `vfast-setup.exe` so the Effects panel ships (pyinstaller --clean, then makensis); nothing from this session is committed yet
+- [ ] gui/: move the duplicated `_SPEED_TIERS` in panels/trim.py, cut.py, overlay.py onto `core.render.SPEED_TIERS`
+- [x] gui/: persist Cut and Trim specs per video with Save/Load by file name — see [[cut-trim-spec]]
+- [ ] gui/: click-test Cut/Trim spec persistence with real mouse + real Save/Load dialogs — see [[cut-trim-spec]]
+- [x] gui/: Overlay autosave/restore per video on the shared spec session (decided with the user) — see [[cut-trim-spec]]

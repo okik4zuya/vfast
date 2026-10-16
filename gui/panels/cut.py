@@ -5,8 +5,11 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from core import segspec, settings
+from core import spec as specmod
 from core.media import list_videos, format_duration
 from core.cut import cut_media, parse_time
+from widgets.spec_bar import SpecBanner, ask_load_path, new_session, spec_menu
 from widgets.timeline import Timeline
 from widgets.segment_row_list import SegmentRowList
 from widgets.video_pane import VideoPane
@@ -53,6 +56,7 @@ class CutPanel(ctk.CTkFrame):
         self.app = app
         self._running = False
         self.videos = []
+        self.session = new_session(self, segspec.CutSession)
         self._build()
         self._refresh_files()
 
@@ -85,25 +89,33 @@ class CutPanel(ctk.CTkFrame):
         # requires a direct child, so add that wrapper, not `right` itself.
         paned.add(right._parent_frame, minsize=220, width=345, stretch="always")
 
-        ctk.CTkLabel(right, text="Cut", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        head = ctk.CTkFrame(right, fg_color="transparent")
+        head.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ctk.CTkLabel(head, text="Cut", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
+        spec_menu(head, self._save_spec, self._load_spec, self._reset_spec).pack(side="right")
 
-        ctk.CTkLabel(right, text="Timeline:").grid(row=1, column=0, columnspan=2, sticky="w")
+        self.banner = SpecBanner(right, on_keep=self._keep_spec)
+        self.banner.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        self.banner.grid_remove()
+
+        ctk.CTkLabel(right, text="Timeline:").grid(row=2, column=0, columnspan=2, sticky="w")
         self.timeline = Timeline(right, mode="multi", on_change=self._on_timeline_change)
-        self.timeline.grid(row=2, column=0, columnspan=2, pady=(4, 8), sticky="ew")
+        self.timeline.grid(row=3, column=0, columnspan=2, pady=(4, 8), sticky="ew")
 
-        ctk.CTkLabel(right, text="Remove ranges:").grid(row=3, column=0, columnspan=2, sticky="w")
+        ctk.CTkLabel(right, text="Remove ranges:").grid(row=4, column=0, columnspan=2, sticky="w")
         self.segment_list = SegmentRowList(right, selectable=True,
                                             on_change=self._on_segments_change,
                                             on_select=self._on_segment_select,
                                             default_range=self._default_range,
                                             on_capture=self._apply_mpv_time)
-        self.segment_list.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.segment_list.grid(row=5, column=0, columnspan=2, sticky="ew")
 
         speed_frame = ctk.CTkFrame(right, fg_color="transparent")
-        speed_frame.grid(row=5, column=0, columnspan=2, pady=(8, 0), sticky="w")
+        speed_frame.grid(row=6, column=0, columnspan=2, pady=(8, 0), sticky="w")
         ctk.CTkLabel(speed_frame, text="Build speed:").pack(side="left", padx=(0, 12))
-        self.speed_var = ctk.StringVar(value="balanced")
+        saved = settings.get("cut_quality", "balanced")
+        self.speed_var = ctk.StringVar(value=saved if saved in _SPEED_TIERS else "balanced")
+        self.speed_var.trace_add("write", lambda *_: settings.set("cut_quality", self.speed_var.get()))
         ctk.CTkRadioButton(speed_frame, text="Fast", variable=self.speed_var,
                            value="fast").pack(side="left", padx=(0, 12))
         ctk.CTkRadioButton(speed_frame, text="Balanced", variable=self.speed_var,
@@ -112,33 +124,42 @@ class CutPanel(ctk.CTkFrame):
                            value="high").pack(side="left")
 
         output_frame = ctk.CTkFrame(right, fg_color="transparent")
-        output_frame.grid(row=6, column=0, columnspan=2, pady=(8, 4), sticky="ew")
+        output_frame.grid(row=7, column=0, columnspan=2, pady=(8, 4), sticky="ew")
         output_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(output_frame, text="Output filename:").grid(row=0, column=0, sticky="w")
         self.output_entry = ctk.CTkEntry(output_frame)
         self.output_entry.grid(row=0, column=1, padx=8, sticky="ew")
 
         run_btn = ctk.CTkButton(right, text="Run Cut", command=self._run)
-        run_btn.grid(row=7, column=1, pady=(12, 4), sticky="e")
+        run_btn.grid(row=8, column=1, pady=(12, 4), sticky="e")
 
     def _refresh_files(self):
         project_dir = self.app.project.project_dir
         self.videos = list_videos(project_dir) if project_dir else []
         self.video_menu.configure(values=[v.name for v in self.videos] or ["(no videos found)"])
-        self.video_menu.set(self.videos[0].name if self.videos else "(no videos found)")
+        self.video_menu.set(self.app.preferred_video(self.videos))
         self._on_video_change()
 
     def _current_video(self):
         name = self.video_menu.get()
-        return next((v for v in self.videos if v.name == name), None)
+        media = next((v for v in self.videos if v.name == name), None)
+        if media:
+            self.app.selected_video = media.path  # survives switching panels
+        return media
 
     def _on_video_change(self):
+        self._persist()  # whatever is typed belongs to the video being left
         media = self._current_video()
         duration = media.duration if media else 0.0
+        self.session.switch_video(media.path if media else None)
         self.timeline.set_duration(duration)
-        if not self.segment_list.rows:
-            self.segment_list.add_row(*self._default_range())
-        self._on_segments_change()
+        with self.session.applying():
+            self._sync_widgets()
+        if media:
+            fp = specmod.fingerprint(media.path, media.duration, media.width, media.height)
+            if fp:
+                self.session.apply_probe(self.session.generation, fp)
+        self._show_issues()
         self.output_entry.delete(0, "end")
         if media:
             base, ext = os.path.splitext(media.name)
@@ -152,9 +173,12 @@ class CutPanel(ctk.CTkFrame):
             self.mpv_embed.stop()
 
     def _default_range(self) -> tuple[str, str]:
-        media = self._current_video()
+        return self._range_after([e for s, e in self._parsed_ranges() if e > 0])
+
+    def _range_after(self, existing: list[float]) -> tuple[str, str]:
+        # The spec's video, not the dropdown's: while switching, rows still belong to the one being left.
+        media = next((v for v in self.videos if v.path == self.session.video), None) or self._current_video()
         duration = media.duration if media else 0.0
-        existing = [e for s, e in self._parsed_ranges() if e > 0]
         start = min(max(existing, default=0.0), duration)
         end = min(start + 5.0, duration)
         if end <= start:
@@ -175,12 +199,94 @@ class CutPanel(ctk.CTkFrame):
     def _on_segments_change(self):
         active = self.segment_list.selected_index or 0
         self.timeline.set_ranges(self._parsed_ranges(), active_index=active)
+        self._persist()
+
+    # ---- spec (<video>.cut.json) ----
+    def _sync_widgets(self):
+        """spec -> widgets. Call inside `session.applying()` so nothing writes back."""
+        self.segment_list.clear()
+        for start, end in self.session.spec["ranges"]:
+            self.segment_list.add_row(start, end)
+            if not start and not end:  # add_row would replace an empty pair by the default range
+                self.segment_list.set_row(len(self.segment_list.rows) - 1, "", "")
+        if not self.segment_list.rows:
+            self.segment_list.add_row(*self._range_after([]))
+        self._on_segments_change()
+
+    def _persist(self):
+        """widgets -> spec. A lone row still showing the default range is not worth saving."""
+        if self.session.video is None:
+            return
+        try:
+            rows = [list(r) for r in self.segment_list.get_segments()]
+        except tk.TclError:
+            return  # widgets already gone
+        if rows == [list(self._range_after([]))]:
+            rows = []
+        self.session.update(ranges=rows)
+        self.session.revalidate()
+        self._show_issues()
+
+    def _show_issues(self):
+        s = self.session
+        msgs = list(s.warnings) + [i.message for i in s.issues] + ([s.save_error] if s.save_error else [])
+        self.banner.show(msgs, can_keep=any(i.kind in ("file_changed", "resolution_changed") for i in s.issues))
+
+    def _keep_spec(self):
+        self.session.accept_source()
+        self._show_issues()
+
+    def _reset_spec(self):
+        self.session.reset()
+        with self.session.applying():
+            self._sync_widgets()
+        self._show_issues()
+
+    def _save_spec(self):
+        media = self._current_video()
+        if not media:
+            self.app.log("[Cut] No video selected.")
+            return
+        self._persist()
+        path = self.session.default_export_path()  # always next to the video, named after it
+        try:
+            self.session.export_to(path)
+            self.app.log(f"[Cut] Spec saved: {path}")
+        except OSError as e:
+            self.app.log(f"[Cut] Could not save spec: {e}")
+
+    def _load_spec(self):
+        media = self._current_video()
+        if not media:
+            self.app.log("[Cut] No video selected.")
+            return
+        path = ask_load_path(media.path, "Cut")
+        if not path:
+            return
+        ok, warns = self.session.import_from(path)
+        for w in warns:
+            self.app.log(f"[Cut] {os.path.basename(path)}: {w}")
+        if ok:
+            with self.session.applying():
+                self._sync_widgets()
+            self.app.log(f"[Cut] Spec loaded: {os.path.basename(path)}")
+        self._show_issues()
+
+    def destroy(self):
+        # Navigation destroys the panel: persist what is typed (an entry may not have lost focus yet).
+        try:
+            self._persist()
+            self.session.flush()
+        except Exception:
+            pass
+        super().destroy()
 
     def _on_segment_select(self, idx: int):
         self.timeline.set_active(idx)
 
     def _on_timeline_change(self, idx, start, end):
         self.segment_list.set_row(idx, format_duration(start), format_duration(end))
+        self._persist()
 
     def _apply_mpv_time(self, idx: int, is_start: bool):
         if not self.mpv_embed.is_running():
