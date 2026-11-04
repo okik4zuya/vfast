@@ -2,6 +2,7 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
+from core.cut import parse_time
 from widgets.delete_control import confirm_delete, make_delete_button
 
 
@@ -17,11 +18,19 @@ class SegmentRowList(ctk.CTkFrame):
                  on_change: Optional[Callable[[], None]] = None,
                  on_select: Optional[Callable[[int], None]] = None,
                  default_range: Optional[Callable[[], tuple[str, str]]] = None,
-                 on_capture: Optional[Callable[[int, bool], None]] = None):
+                 on_capture: Optional[Callable[[int, bool], None]] = None,
+                 on_goto: Optional[Callable[[int, bool, float, bool], None]] = None,
+                 on_preview: Optional[Callable[[int], None]] = None):
         """on_capture(idx, is_start): if given, a ⏺ button beside each of Start/End calls it
-        (the owner fills that field from the player's current time)."""
+        (the owner fills that field from the player's current time).
+        on_goto(idx, is_start, seconds, explicit): the reverse — a field holding a valid time was
+        focused (explicit=False) or confirmed with Enter (explicit=True); the owner shows that time
+        in the player.
+        on_preview(idx): if given, a ▶ button left of Start calls it (the owner plays that range)."""
         super().__init__(parent, fg_color="transparent")
         self.on_capture = on_capture
+        self.on_goto = on_goto
+        self.on_preview = on_preview
         self.selectable = selectable
         self.on_change = on_change
         self.on_select = on_select
@@ -45,9 +54,13 @@ class SegmentRowList(ctk.CTkFrame):
         row_frame.grid(row=idx, column=0, pady=2, sticky="ew")
 
         ctk.CTkLabel(row_frame, text=f"{idx + 1}.", width=24).pack(side="left")
+        play_btn = None
+        if self.on_preview:  # between the number and Start: "play this range"
+            play_btn = ctk.CTkButton(row_frame, text="▶", width=28)
+            play_btn.pack(side="left", padx=(2, 0))
 
         cap = self.on_capture is not None  # compact row: ⏺ buttons, no Select button
-        entry_w = 92 if cap else 120
+        entry_w = (82 if self.on_preview else 92) if cap else 120
         start_entry = ctk.CTkEntry(row_frame, placeholder_text="Start", width=entry_w)
         start_entry.insert(0, start)
         start_entry.pack(side="left", padx=(4, 2 if cap else 4))
@@ -55,6 +68,8 @@ class SegmentRowList(ctk.CTkFrame):
         start_entry.bind("<Return>", lambda e: self._notify_change())
 
         entry = {"frame": row_frame, "start": start_entry, "initial": (start, end)}
+        if play_btn:
+            entry["play_btn"] = play_btn
         if cap:
             entry["start_mark"] = ctk.CTkButton(row_frame, text="⏺", width=28)
             entry["start_mark"].pack(side="left", padx=(0, 4))
@@ -82,6 +97,11 @@ class SegmentRowList(ctk.CTkFrame):
         delete_btn = make_delete_button(row_frame, lambda: self._request_delete(idx))
         delete_btn.pack(side="right", padx=(0, 2))
         entry["delete_btn"] = delete_btn
+
+        if self.on_goto:
+            for w, is_start in ((start_entry, True), (end_entry, False)):
+                w.bind("<FocusIn>", lambda e, f=row_frame, s=is_start: self._goto(f, s, False), add="+")
+                w.bind("<Return>", lambda e, f=row_frame, s=is_start: self._goto(f, s, True), add="+")
 
         self.rows.append(entry)
         self._wire_row(idx)
@@ -120,9 +140,23 @@ class SegmentRowList(ctk.CTkFrame):
 
     def _wire_row(self, i: int):
         entry = self.rows[i]
+        if "play_btn" in entry:
+            entry["play_btn"].configure(command=lambda j=i: self.on_preview(j))
         if "start_mark" in entry:
             entry["start_mark"].configure(command=lambda j=i: self._capture(j, True))
             entry["end_mark"].configure(command=lambda j=i: self._capture(j, False))
+
+    def _goto(self, frame, is_start: bool, explicit: bool):
+        try:
+            idx = self._index_of(frame)
+        except StopIteration:  # row deleted while the event was queued
+            return
+        text = self.rows[idx]["start" if is_start else "end"].get().strip()
+        try:
+            seconds = parse_time(text)
+        except ValueError:  # empty or half-typed: nothing to show
+            return
+        self.on_goto(idx, is_start, seconds, explicit)
 
     def _capture(self, idx: int, is_start: bool):
         self._select(idx)

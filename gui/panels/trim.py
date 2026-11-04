@@ -8,10 +8,12 @@ import customtkinter as ctk
 from core import segspec, settings
 from core import spec as specmod
 from core.media import list_videos, format_duration
-from core.trim import trim_video, bulk_trim
+from core.trim import trim_video, bulk_trim, incomplete_rows
 from core.cut import parse_time
+from core.range_nav import RangeNav
 from widgets.spec_bar import SpecBanner, ask_load_path, new_session, spec_menu
 from widgets.timeline import Timeline
+from widgets.preview_options import PreviewOptions
 from widgets.segment_row_list import SegmentRowList
 from widgets.video_pane import VideoPane
 
@@ -51,6 +53,7 @@ class TrimPanel(ctk.CTkFrame):
         paned.add(pane, minsize=260, width=400, stretch="always")
         self.video_menu = pane.video_menu
         self.mpv_embed = pane.mpv_embed
+        self.nav = RangeNav(self.mpv_embed, self.after, self.after_cancel, log=self.app.log, tag="Trim")
 
         right = ctk.CTkScrollableFrame(paned, fg_color="transparent")
         right.grid_columnconfigure(0, weight=1)
@@ -66,16 +69,22 @@ class TrimPanel(ctk.CTkFrame):
         self.banner.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         self.banner.grid_remove()
 
-        self.timeline = Timeline(right, mode="single", on_change=self._on_timeline_change)
+        self.timeline = Timeline(right, mode="single", on_change=self._on_timeline_change,
+                             on_scrub=self.nav.scrub)
         self.timeline.grid(row=2, column=0, pady=(0, 6), sticky="ew")
 
         fields = ctk.CTkFrame(right, fg_color="transparent")
         fields.grid(row=3, column=0, sticky="w")
         self.start_entry = self._time_row(fields, 0, "Start", True)
         self.end_entry = self._time_row(fields, 1, "End", False)
+        ctk.CTkButton(fields, text="▶", width=28, height=60, command=self._preview_single).grid(
+            row=0, column=3, rowspan=2, padx=(4, 0), pady=2)
+
+        self.actions = PreviewOptions(right)
+        self.actions.grid(row=4, column=0, pady=(6, 0), sticky="w")
 
         speed_frame = ctk.CTkFrame(right, fg_color="transparent")
-        speed_frame.grid(row=4, column=0, pady=(8, 0), sticky="w")
+        speed_frame.grid(row=5, column=0, pady=(8, 0), sticky="w")
         ctk.CTkLabel(speed_frame, text="Build speed:").pack(side="left", padx=(0, 10))
         saved = settings.get("trim_quality", "balanced")
         self.speed_var = ctk.StringVar(value=saved if saved in _SPEED_TIERS else "balanced")
@@ -85,22 +94,23 @@ class TrimPanel(ctk.CTkFrame):
                                width=20).pack(side="left", padx=(0, 10))
 
         output_frame = ctk.CTkFrame(right, fg_color="transparent")
-        output_frame.grid(row=5, column=0, pady=(8, 4), sticky="ew")
+        output_frame.grid(row=6, column=0, pady=(8, 4), sticky="ew")
         output_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(output_frame, text="Output:").grid(row=0, column=0, sticky="w")
         self.output_entry = ctk.CTkEntry(output_frame)
         self.output_entry.grid(row=0, column=1, padx=8, sticky="ew")
 
         ctk.CTkButton(right, text="Run Trim", command=self._run_single).grid(
-            row=6, column=0, sticky="e", pady=(4, 0))
+            row=7, column=0, sticky="e", pady=(4, 0))
 
         # --- Bulk trim ---
         ctk.CTkLabel(right, text="Bulk Trim (multiple clips)", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=7, column=0, pady=(20, 4), sticky="w")
-        self.segment_list = SegmentRowList(right, on_capture=self._capture_row, on_change=self._persist)
-        self.segment_list.grid(row=8, column=0, sticky="ew")
+            row=8, column=0, pady=(20, 4), sticky="w")
+        self.segment_list = SegmentRowList(right, on_capture=self._capture_row, on_change=self._persist,
+                                           on_goto=self._on_row_goto, on_preview=self._preview_row)
+        self.segment_list.grid(row=9, column=0, sticky="ew")
         ctk.CTkButton(right, text="Run Bulk Trim", command=self._run_bulk).grid(
-            row=9, column=0, pady=(8, 4), sticky="e")
+            row=10, column=0, pady=(8, 4), sticky="e")
 
     def _time_row(self, parent, row: int, label: str, is_start: bool) -> ctk.CTkEntry:
         ctk.CTkLabel(parent, text=label, width=40, anchor="w").grid(row=row, column=0, pady=2)
@@ -109,6 +119,8 @@ class TrimPanel(ctk.CTkFrame):
         entry.grid(row=row, column=1, padx=(0, 4), pady=2)
         entry.bind("<FocusOut>", lambda e: self._on_field_change())
         entry.bind("<Return>", lambda e: self._on_field_change())
+        entry.bind("<FocusIn>", lambda e: self._goto_field(entry, False), add="+")
+        entry.bind("<Return>", lambda e: self._goto_field(entry, True), add="+")
         ctk.CTkButton(parent, text="⏺", width=28,
                       command=lambda: self._capture_single(is_start)).grid(row=row, column=2, pady=2)
         return entry
@@ -129,6 +141,7 @@ class TrimPanel(ctk.CTkFrame):
         return media
 
     def _on_video_change(self):
+        self.nav.stop()
         self._persist()  # whatever is typed belongs to the video being left
         media = self._current_video()
         duration = media.duration if media else 0.0
@@ -257,11 +270,33 @@ class TrimPanel(ctk.CTkFrame):
     def destroy(self):
         # Navigation destroys the panel: persist what is typed (an entry may not have lost focus yet).
         try:
+            self.nav.stop()
             self._persist()
             self.session.flush()
         except Exception:
             pass
         super().destroy()
+
+    # ---- jump to / preview a range ----
+    def _goto_field(self, entry, explicit: bool):
+        try:
+            seconds = parse_time(entry.get())
+        except ValueError:
+            return
+        if explicit or self.actions.jump_on_focus:
+            self.nav.goto(seconds)
+
+    def _preview_single(self):
+        self.nav.preview(self.start_entry.get(), self.end_entry.get())
+
+    def _preview_row(self, idx: int):
+        rows = self.segment_list.get_segments()
+        if idx < len(rows):
+            self.nav.preview(rows[idx][0], rows[idx][1])
+
+    def _on_row_goto(self, idx: int, is_start: bool, seconds: float, explicit: bool):
+        if explicit or self.actions.jump_on_focus:
+            self.nav.goto(seconds)
 
     # ---- time capture ----
     def _capture(self, apply):
@@ -363,16 +398,22 @@ class TrimPanel(ctk.CTkFrame):
             self.app.log("[Trim] Add at least one segment row.")
             return
 
+        bad = incomplete_rows(segments)
+        if bad:  # a half-filled row is almost certainly a mistake: stop instead of silently dropping it
+            for row, why in bad:
+                self.app.log(f"[Trim] Row {row}: {why}. Fix it or delete the row, then run again.")
+            return
+
         preset, crf = _SPEED_TIERS[self.speed_var.get()]
         output_dir = self.app.project.project_dir
         self._running = True
 
         def worker():
             try:
-                count = bulk_trim(media.path, segments, output_dir, is_video=True, log=self.app.log,
-                                  preset=preset, crf=crf)
-                if count > 0:
-                    self.app.log_result(f"[Trim] Created {count} clip(s)", output_dir)
+                result = bulk_trim(media.path, segments, output_dir, is_video=True, log=self.app.log,
+                                   preset=preset, crf=crf)
+                if result.created:
+                    self.app.log_result(f"[Trim] Created {len(result.created)} clip(s)", output_dir)
             finally:
                 self._running = False
 

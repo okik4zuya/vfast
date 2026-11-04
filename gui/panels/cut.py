@@ -9,8 +9,10 @@ from core import segspec, settings
 from core import spec as specmod
 from core.media import list_videos, format_duration
 from core.cut import cut_media, parse_time
+from core.range_nav import RangeNav
 from widgets.spec_bar import SpecBanner, ask_load_path, new_session, spec_menu
 from widgets.timeline import Timeline
+from widgets.preview_options import PreviewOptions
 from widgets.segment_row_list import SegmentRowList
 from widgets.video_pane import VideoPane
 
@@ -80,6 +82,7 @@ class CutPanel(ctk.CTkFrame):
         paned.add(pane, minsize=260, width=400, stretch="always")
         self.video_menu = pane.video_menu
         self.mpv_embed = pane.mpv_embed
+        self.nav = RangeNav(self.mpv_embed, self.after, self.after_cancel, log=self.app.log, tag="Cut")
 
         right = ctk.CTkScrollableFrame(paned, fg_color="transparent")
         right.grid_columnconfigure(1, weight=1)
@@ -99,7 +102,8 @@ class CutPanel(ctk.CTkFrame):
         self.banner.grid_remove()
 
         ctk.CTkLabel(right, text="Timeline:").grid(row=2, column=0, columnspan=2, sticky="w")
-        self.timeline = Timeline(right, mode="multi", on_change=self._on_timeline_change)
+        self.timeline = Timeline(right, mode="multi", on_change=self._on_timeline_change,
+                                on_scrub=self.nav.scrub)
         self.timeline.grid(row=3, column=0, columnspan=2, pady=(4, 8), sticky="ew")
 
         ctk.CTkLabel(right, text="Remove ranges:").grid(row=4, column=0, columnspan=2, sticky="w")
@@ -107,11 +111,16 @@ class CutPanel(ctk.CTkFrame):
                                             on_change=self._on_segments_change,
                                             on_select=self._on_segment_select,
                                             default_range=self._default_range,
-                                            on_capture=self._apply_mpv_time)
+                                            on_capture=self._apply_mpv_time,
+                                            on_goto=self._on_goto,
+                                            on_preview=self._preview_row)
         self.segment_list.grid(row=5, column=0, columnspan=2, sticky="ew")
 
+        self.actions = PreviewOptions(right, show_join=True)
+        self.actions.grid(row=6, column=0, columnspan=2, pady=(6, 0), sticky="w")
+
         speed_frame = ctk.CTkFrame(right, fg_color="transparent")
-        speed_frame.grid(row=6, column=0, columnspan=2, pady=(8, 0), sticky="w")
+        speed_frame.grid(row=7, column=0, columnspan=2, pady=(8, 0), sticky="w")
         ctk.CTkLabel(speed_frame, text="Build speed:").pack(side="left", padx=(0, 12))
         saved = settings.get("cut_quality", "balanced")
         self.speed_var = ctk.StringVar(value=saved if saved in _SPEED_TIERS else "balanced")
@@ -124,14 +133,14 @@ class CutPanel(ctk.CTkFrame):
                            value="high").pack(side="left")
 
         output_frame = ctk.CTkFrame(right, fg_color="transparent")
-        output_frame.grid(row=7, column=0, columnspan=2, pady=(8, 4), sticky="ew")
+        output_frame.grid(row=8, column=0, columnspan=2, pady=(8, 4), sticky="ew")
         output_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(output_frame, text="Output filename:").grid(row=0, column=0, sticky="w")
         self.output_entry = ctk.CTkEntry(output_frame)
         self.output_entry.grid(row=0, column=1, padx=8, sticky="ew")
 
         run_btn = ctk.CTkButton(right, text="Run Cut", command=self._run)
-        run_btn.grid(row=8, column=1, pady=(12, 4), sticky="e")
+        run_btn.grid(row=9, column=1, pady=(12, 4), sticky="e")
 
     def _refresh_files(self):
         project_dir = self.app.project.project_dir
@@ -148,6 +157,7 @@ class CutPanel(ctk.CTkFrame):
         return media
 
     def _on_video_change(self):
+        self.nav.stop()
         self._persist()  # whatever is typed belongs to the video being left
         media = self._current_video()
         duration = media.duration if media else 0.0
@@ -275,6 +285,7 @@ class CutPanel(ctk.CTkFrame):
     def destroy(self):
         # Navigation destroys the panel: persist what is typed (an entry may not have lost focus yet).
         try:
+            self.nav.stop()
             self._persist()
             self.session.flush()
         except Exception:
@@ -283,6 +294,19 @@ class CutPanel(ctk.CTkFrame):
 
     def _on_segment_select(self, idx: int):
         self.timeline.set_active(idx)
+
+    # ---- jump to / preview a range ----
+    def _preview_row(self, idx: int):
+        rows = self.segment_list.get_segments()
+        if idx >= len(rows):
+            return
+        media = self._current_video()
+        self.nav.preview(rows[idx][0], rows[idx][1], join=self.actions.join,
+                         duration=media.duration if media else 0.0)
+
+    def _on_goto(self, idx: int, is_start: bool, seconds: float, explicit: bool):
+        if explicit or self.actions.jump_on_focus:
+            self.nav.goto(seconds)
 
     def _on_timeline_change(self, idx, start, end):
         self.segment_list.set_row(idx, format_duration(start), format_duration(end))

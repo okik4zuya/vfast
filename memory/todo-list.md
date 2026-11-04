@@ -5,7 +5,7 @@ metadata:
   type: project
   tier: T0
   created: 2026-09-11 10:48
-  updated: 2026-10-16 08:04
+  updated: 2026-11-04 07:03
 ---
 
 # vfast — To-Do
@@ -76,8 +76,11 @@ metadata:
 - [ ] Verify the new icon in a real install (re-run `vfast-setup.exe`, re-create the desktop shortcut); installer also bundles the loading overlay + layout pass, not click-tested
 - [x] gui/: Effects panel (21 presets, 25 packs, one-render pipeline with Overlay + speed + audio, per-video spec, live mpv preview, `presets/vfx.py` CLI, 45 tests) - see [[effects-panel]]
 - [ ] gui/: click-test the Effects panel for real (checkbox/pack clicks, live preview in mpv, Test 10s, Render, switching videos, leaving and returning) and tune preset strengths on real footage - UNCONFIRMED, see [[effects-panel]]
-- [ ] Rebuild exe + `vfast-setup.exe` so the Effects panel ships (pyinstaller --clean, then makensis); nothing from this session is committed yet
+- [ ] Rebuild exe + `vfast-setup.exe` for v0.1.1 (pyinstaller gui\vfast.spec --noconfirm --clean --distpath dist --workpath build, then makensis gui\installer.nsi), open the Effects tab in the built exe, then publish the release
 - [ ] gui/: move the duplicated `_SPEED_TIERS` in panels/trim.py, cut.py, overlay.py onto `core.render.SPEED_TIERS`
 - [x] gui/: persist Cut and Trim specs per video with Save/Load by file name — see [[cut-trim-spec]]
 - [ ] gui/: click-test Cut/Trim spec persistence with real mouse + real Save/Load dialogs — see [[cut-trim-spec]]
 - [x] gui/: Overlay autosave/restore per video on the shared spec session (decided with the user) — see [[cut-trim-spec]]
+- [x] gui/core/trim.py `bulk_trim`: every row accounted for (skip reasons logged, `clip_<row>` naming, per-row summary); Run Bulk Trim refuses half-filled/invalid rows; 6 tests in tests/test_bulk_trim.py. Original cause (row 1 skipped vs ffmpeg failure) never confirmed from the user's log
+- [x] gui/: Cut/Trim jump-to-range: field click/Enter seeks the player, one ▶ per range row (Trim single: one ▶ beside the fields) + `PreviewOptions` checkboxes (jump on click; Cut 'join'), timeline handle scrub — core/range_nav.py, widgets/preview_options.py, MpvEmbed.seek_to/seek_to_throttled; 12 tests in tests/test_range_nav.py + headless widget/panel smoke
+- [ ] gui/: click-test jump-to-range with a real video in real mpv (field focus seek, Preview stops on End, 'with join' sequence, scrub smoothness, ▶ per row fits the 345 px right pane (row needs ~325 px), Trim bulk + single) — UNCONFIRMED; seek ordering/IPC only tested against fakes

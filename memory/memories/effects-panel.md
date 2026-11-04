@@ -5,7 +5,7 @@ metadata:
   type: project
   tier: T1
   created: 2026-10-16 07:00
-  updated: 2026-10-16 07:47
+  updated: 2026-10-16 08:30
 ---
 
 # Effects panel (single-render effects + overlay + speed + audio)
@@ -60,9 +60,10 @@ watermark -> `setpts` (speed) -> fade (timed on the sped-up length). Audio: over
 - Live preview excludes overlay effects, logo, speed audio pitch and fade (use Test 10s). `zoompan` is jittery
   by nature and slow on long clips. Output defaults to `.mp4`; `+faststart` only for mp4/mov/m4v.
 - Quality tiers duplicated in Trim/Cut/Overlay panels (`_SPEED_TIERS`); Effects uses `core.render.SPEED_TIERS`.
-- Not committed; exe/installer not rebuilt (Effects not in `vfast-setup.exe` yet).
+- Committed in v0.1.1 (`eed7371`); `vfast-setup.exe` not rebuilt as far as this memory knows.
 
 ## Change log
 - 2026-10-16 07:00: Created. Engine, spec session, panel, sidebar entry, CLI wrapper, tests, README row.
 - 2026-10-16 07:26: Chosen pack now persists (`spec['pack']`); the dropdown shows it only while the ticked presets still equal the pack (`spec.effective_pack`), so hand-editing falls back to the placeholder and restoring brings it back. Reported by the user; 5 new tests (50 total) + real-panel check.
 - 2026-10-16 07:47: Spec machinery generalized into core/sidecar.py (Effects behaviour unchanged, all 27 spec tests + the real-panel scripts still pass); Cut/Trim now use it.
+- 2026-10-16 08:30: Committed (eed7371, v0.1.1).

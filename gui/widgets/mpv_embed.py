@@ -47,6 +47,9 @@ class MpvEmbed(ctk.CTkFrame):
         self.pipe_name: Optional[str] = None
         self._aspect = _ASPECT
         self._max_height = 0  # 0 = uncapped; see set_max_height
+        self._scrub_lock = threading.Lock()
+        self._scrub_pending: Optional[float] = None
+        self._scrub_busy = False
 
         # Plain tk.Frame, not CTkFrame: CTkFrame draws rounded-corner canvas
         # art over children which can conflict with mpv's child HWND painting.
@@ -223,6 +226,53 @@ class MpvEmbed(ctk.CTkFrame):
             return
         pipe_name = self.pipe_name
         threading.Thread(target=send_command, args=(pipe_name, command), daemon=True).start()
+
+    def send_commands_async(self, commands: list[list]):
+        """Like send_command_async, but the commands go out in order from ONE worker thread.
+        Separate send_command_async calls each get their own thread, so e.g. a seek followed by a
+        pause can arrive swapped; use this whenever the order matters."""
+        if not self.is_running() or not self.pipe_name:
+            return
+        pipe_name = self.pipe_name
+
+        def worker():
+            for command in commands:
+                send_command(pipe_name, command)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def seek_to(self, seconds: float, pause: bool = True):
+        """Frame-accurate jump to an absolute time, then pause (or play)."""
+        self.send_commands_async([
+            ["seek", max(0.0, float(seconds)), "absolute+exact"],
+            ["set_property", "pause", bool(pause)],
+        ])
+
+    def pause(self):
+        self.send_command_async(["set_property", "pause", True])
+
+    def seek_to_throttled(self, seconds: float):
+        """For scrubbing (a handle being dragged): seeks the player to `seconds`, paused, at most one
+        seek per ~80 ms and never a backlog — while one seek is in flight only the newest target is kept."""
+        if not self.is_running() or not self.pipe_name:
+            return
+        with self._scrub_lock:
+            self._scrub_pending = max(0.0, float(seconds))
+            if self._scrub_busy:
+                return
+            self._scrub_busy = True
+        threading.Thread(target=self._scrub_worker, args=(self.pipe_name,), daemon=True).start()
+
+    def _scrub_worker(self, pipe_name: str):
+        send_command(pipe_name, ["set_property", "pause", True])
+        while True:
+            with self._scrub_lock:
+                target, self._scrub_pending = self._scrub_pending, None
+                if target is None:
+                    self._scrub_busy = False
+                    return
+            send_command(pipe_name, ["seek", target, "absolute+exact"])
+            time.sleep(0.08)
 
     def set_filters(self, vf: str = "", af: str = ""):
         """Swap the live video/audio filter graphs on the running mpv (no restart, position kept).

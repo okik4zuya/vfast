@@ -5,24 +5,27 @@ metadata:
   type: project
   tier: T0
   created: 2026-09-11 10:48
-  updated: 2026-10-16 08:04
+  updated: 2026-10-16 08:30
 ---
 
 # vfast — Status
 
 ## Current state
 
-**Effects panel built and headless-verified (2026-10-16) — see [[effects-panel]].** New sidebar tab "Effects":
-21 presets / 25 packs (YouTube x8, Shorts/TikTok/Reels, Instagram, WhatsApp, looks, quick fixes) rendered
-together with the saved Overlay effects, speed and audio cleanup in **one** ffmpeg pass, with live mpv preview
-and a per-video `<video>.effects.json` that survives panel switches and video changes without leaking
-(`core/effects.py`, `render.py`, `spec.py`, `panels/effects.py`; CLI in `presets/vfx.py`). 45 tests pass; the real
-app was driven headless incl. render, Test 10s and minsize 760x520.
-**Cut/Trim spec persistence (2026-10-16 07:47) — see [[cut-trim-spec]].** `<video>.cut.json` / `<video>.trim.json` restore the ranges after leaving a panel or switching video (no leak), with a "Spec ▾" menu (Save writes beside the video without a dialog; Load/Reset), the same menu now in Effects and Overlay; **Overlay also autosaves/restores per video** (`core/overlayspec.py`; file stays CLI/Effects compatible, may contain unfinished rows which Effects skips) and a banner for specs that no longer fit the video; shared engine `core/sidecar.py` (Effects moved onto it). 68 tests + real-app scripts pass; not click-tested.
+**v0.1.1 committed (2026-10-16).** HEAD `fee0053 v0.1.1` on top of `eed7371 Add Effects panel and per-video spec persistence
+(Cut, Trim, Overlay, Effects)`; `gui/VERSION` = 0.1.1; working tree clean. Release notes for v0.1.1 were drafted in chat
+(not stored in the repo).
 
-**Also (2026-10-16 07:19):** the selected video is now remembered across panels (`App.selected_video`, [[ui-layout-pass]]).
-**Open:** no real mouse click-test or look tuning on real footage; exe/installer not rebuilt; nothing committed.
-Older open items (Cut/Trim/Overlay click-tests, new icon in a real install) are in [[todo-list]].
+Shipped in the code: Effects panel (21 presets / 25 packs, one ffmpeg pass with Overlay + speed + audio, live mpv preview,
+Test 10s, `presets/vfx.py` CLI) - [[effects-panel]]; per-video spec persistence with a shared engine (`core/sidecar.py`) for
+Cut, Trim, Overlay and Effects: `<video>.cut|trim|overlay|effects.json`, "Spec ▾" menu (Save writes beside the video without a
+dialog, Load..., Reset), banner for specs that no longer fit the video - [[cut-trim-spec]]. Trim stores BOTH the single range
+and the bulk rows in `<video>.trim.json`. Selected video is kept across panels (`App.selected_video`, [[ui-layout-pass]]).
+80 unit/integration tests (`cd gui && ..\venv-gui\Scripts\python -m unittest discover -s tests -t .`) plus real-app scripts pass.
+
+**Open:** nothing click-tested by the user (real mouse, real file dialogs, look strengths on real footage); `dist\vfast.exe` /
+`vfast-setup.exe` not rebuilt for v0.1.1 as far as this memory knows (commands: pyinstaller gui\vfast.spec, then makensis
+gui\installer.nsi - see [[packaging]]). Older open items are in [[todo-list]].
 
 ## Archive
 
@@ -48,3 +51,5 @@ Older open items (Cut/Trim/Overlay click-tests, new icon in a real install) are 
   [[ui-layout-pass]]; tab-switch speedup + loading overlay - [[panel-loading]]; Trim rebuilt on the Cut layout -
   [[trim-panel-redesign]]; Overlay panel - [[overlay-engine]]; blurry shortcut icon fixed (ICO had only 16px) and
   exe + `vfast-setup.exe` rebuilt - [[app-icon]], [[packaging]]. All headless/screenshot-verified, not click-tested.
+- 2026-10-16: Effects panel + engine ([[effects-panel]]); selected video kept across panels; Cut/Trim/Overlay/Effects spec
+  persistence on `core/sidecar.py` ([[cut-trim-spec]]); sidebar padding tightened so 13 buttons fit minsize 520.

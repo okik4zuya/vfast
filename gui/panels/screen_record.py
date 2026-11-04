@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
-from core.screen_record import ScreenRecorder, list_microphones
+from core.screen_record import ScreenRecorder, list_microphones, recover_unfinished
 
 if TYPE_CHECKING:
     from app import App
@@ -21,6 +21,20 @@ class ScreenRecordPanel(ctk.CTkFrame):
         self._tick_job = None
         self._build()
         self._load_mics()
+        self._recover_unfinished()
+
+    def _recover_unfinished(self, current_output: str | None = None):
+        """Remux raw recordings left over from a crash or power loss."""
+        folder = getattr(self.app.project, "project_dir", None)
+        if not folder:
+            return
+        current_raw = os.path.splitext(current_output)[0] + ".rec.mkv" if current_output else None
+
+        def worker():
+            for path in recover_unfinished(folder, log=self.app.log, exclude=current_raw):
+                self.app.log_result("[ScreenRecord] Recovered", path)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _build(self):
         self.grid_columnconfigure(1, weight=1)
@@ -83,6 +97,7 @@ class ScreenRecordPanel(ctk.CTkFrame):
         output_name = self.output_entry.get().strip() or self._default_filename()
         output_path = os.path.join(self.app.project.project_dir, output_name)
         self._last_output_path = output_path
+        self._recover_unfinished(current_output=output_path)
 
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")

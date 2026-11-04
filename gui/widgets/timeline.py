@@ -25,11 +25,15 @@ class Timeline(ctk.CTkFrame):
     HEIGHT = 56
 
     def __init__(self, parent, duration: float = 0.0, mode: str = "single",
-                 on_change: Optional[Callable] = None):
+                 on_change: Optional[Callable] = None,
+                 on_scrub: Optional[Callable[[float], None]] = None):
+        """on_scrub(seconds): called while a handle is dragged, with the time under that handle
+        (the owner shows that frame in the player)."""
         super().__init__(parent, fg_color="transparent")
         self.duration = max(duration, 0.001)
         self.mode = mode
         self.on_change = on_change
+        self.on_scrub = on_scrub
 
         self.ranges: list[list[float]] = []  # [start, end] per range
         self.active_index = 0
@@ -134,6 +138,8 @@ class Timeline(ctk.CTkFrame):
         self._redraw()
         if self.on_change:
             self.on_change(idx, self.ranges[idx][0], self.ranges[idx][1])
+        if self.on_scrub:
+            self.on_scrub(self.ranges[idx][0] if which == "start" else self.ranges[idx][1])
 
     def _on_release(self, event):
         self._drag_target = None
